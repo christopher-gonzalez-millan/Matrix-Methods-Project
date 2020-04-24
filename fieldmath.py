@@ -1,4 +1,4 @@
-# fieldmath.py
+# Modification of fieldmath.py, modified by Ian Jorquera
 # Author: Nayuki
 # Original Project Title: Reed-Solomon error-correcting code decoder (Python)
 # Copyright (c) 2020 Project Nayuki
@@ -576,6 +576,7 @@ def solve_lstsq(a, b):
     """
     This function solves the normal equations A^T*A*x = A^T*b. Not this function considers only the 'euclidean dot
     product'
+    This really doesnt work with the Binary field. In fact this doesnt really work at all for fields
     """
     if not isinstance(a, Matrix) or not isinstance(a, Matrix):
         raise TypeError

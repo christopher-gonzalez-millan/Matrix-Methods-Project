@@ -6,7 +6,7 @@ class GeneralizedReedSolomon(object):
     """
     This class is an implementation of the Generalized Reed Solomon error correcting code as presented by Yehuda Lindell
     in section 6 of the following lecture notes: http://u.cs.biu.ac.il/~lindell/89-662/main-89-662.html
-    Reed-Solomon is a linear [n,k,n-k+1]-code meaning we can correct up to (n-k)//2 errors.
+    Reed-Solomon is a linear [n,k,n-k+1]-code meaning we can correct up to floor((n-k)/2) errors.
     """
     generator_matrix = None
     parity_check_matrix = None
@@ -123,8 +123,9 @@ class GeneralizedReedSolomon(object):
         """
         # First find syndrome (S_0, ... , S_d-2)
         msg_syndrome = self.syndrome(msg)
-        msg_matrix = fieldmath.create_matrix([msg], self.f)
+        msg_matrix = fieldmath.create_matrix([msg], self.f)  # creates msg row vector
 
+        # we want to build the system of equations as presented on page 48 of the lecture notes
         if msg_syndrome.any():
             tau = (self.d - 1) // 2
             syndrome_matrix = fieldmath.Matrix(self.d - 1, tau + 1, self.f, zeros=True)
@@ -152,11 +153,8 @@ class GeneralizedReedSolomon(object):
                 # divide to find error_locator_poly
                 error_locator_poly, rem = divmod(lambda_poly, gcd_lg)
 
-                # TODO: account for this
-                if rem != Polynomial(self.f.zero(), f=self.f):
-                    raise Exception("Could not decode message. Not GCD found.")
-
                 # Find where the errors are by finding when Lambda(alpha_arr_k^-1) == 0
+                # Where Lambda is our error_locator_poly.
                 error_locations = []
                 for j in range(len(self.alpha_arr)):
                     alpha_inv = self.f.reciprocal(self.alpha_arr[j])
@@ -188,15 +186,13 @@ class GeneralizedReedSolomon(object):
                                        self.f.subtract(msg_matrix.get(0, error_locations[i]), errors.get(i, 0)))
 
         # Last step: give provided msg that created the encoded msg. Because we aren't using G and H in standard form
-        # We need to solve for what msg provided us with the output.
-        # Ive noticed some weird behavior when the number of errors is greater than the number of fixable errors.
+        # We need to solve for what msg provided us with the output. If the number of errors is greater than the number
+        # of fixable errors we wont have a valid message therefore trying to solve this will result in error.
         if not self.syndrome(msg_matrix).any():
             return fieldmath.solve_ax_b(self.generator_matrix.transpose(), msg_matrix.transpose()).to_list(single=True)
         else:
-            try:
-                return fieldmath.solve_lstsq(self.generator_matrix.transpose(), msg_matrix.transpose()).to_list(single=True)
-            except:
-                return [0]*self.k
+            # If we cant correct error the entire message is unusable so you can return all zeros as placeholder
+            return [0]*self.k
 
     def syndrome(self, msg):
         """
@@ -224,7 +220,8 @@ class GeneralizedReedSolomon(object):
     def create_matrices(self):
         """
         This acts as a helper function to create the generator and parity check matrices
-        TODO: Added option for matrices to be in standard form G = (I|X), H = (X^T|I)
+        Although it may be possible to put matrices to be in standard form G = (I|X), H = (X^T|I) it would make decoding
+        very difficult so it is not an option.
         """
         self.generator_matrix = fieldmath.Matrix(self.k, self.n, self.f)
         self.parity_check_matrix = fieldmath.Matrix(self.n - self.k, self.n, self.f)
@@ -232,10 +229,12 @@ class GeneralizedReedSolomon(object):
         # Create Parity Check matrix
         self.parity_check_matrix = self.create_parity_check_matrix(self.k)
 
+        # To find the column multipliers (v_1', ... , v_n') we need to solve for a single message in the code defined
+        # by the parity check matrix with k = 1
         k_one_t = self.create_parity_check_matrix(1)
         k_one_kernel_space = k_one_t.kernel_space()
         if isinstance(k_one_kernel_space, int):
-            raise Exception("Kernel space = 0. Could not find generator matrix. Try different alpha.")
+            raise Exception("Could not find k = 1 parity check matrix. Try different alpha.")
 
         self.vp_arr = (k_one_kernel_space * fieldmath.create_matrix([[1]] * k_one_kernel_space.column_count(),
                                                                     self.f)).to_list(single=True)
@@ -256,7 +255,7 @@ class GeneralizedReedSolomon(object):
 
     def create_parity_check_matrix(self, k):
         """
-        Helper function to create parity check matrix for a give k
+        Helper function to create parity check matrix for a given k
         :param k:
         :return: parity check matrix
         """
