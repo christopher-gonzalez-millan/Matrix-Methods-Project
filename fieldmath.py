@@ -668,12 +668,15 @@ def solve_lstsq(a, b):
 
 
 if __name__ == '__main__':
-    field = BinaryField(0x11d)
-    a = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
-    b = [[5], [2], [8]]
-
-    print(solve_ax_b(create_matrix(a, field), create_matrix(b, field)))
-    print(solve_ax_b_fast(create_matrix(a, field), create_matrix(b, field)))
-
     bf = BinaryField(2)
-    print(bf.size)
+    a = [[1, 0, 0], [1, 1, 0], [1, 1, 1]]
+    a_matrix = create_matrix(a, bf)
+    b = [[1], [1], [0]]
+    b_matrix = create_matrix(b, bf)
+
+    # theis will solve ax = b
+    x_matrix = solve_ax_b(a_matrix, b_matrix)
+    print(x_matrix)
+
+    # we can then print the mult of Ax
+    print(a_matrix*x_matrix)
