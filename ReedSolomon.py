@@ -1,4 +1,4 @@
-from polynomial import *
+from polynomial import PolynomialOperations
 import fieldmath
 
 
@@ -17,6 +17,7 @@ class GeneralizedReedSolomon(object):
         With the provided parameters we can generate the generator and parity check matrices and generator polynomials.
         It is up to the user to ensure all provided inputs for __init__ encode and decode satisfy the field.
         Exceptions will be raised only by field class.
+        Note: This implementation serves as an example. Many improvements can be made to speed it up
         :param f: Provided field class to perform all mathematical operations under. The recommended field is
         BinaryField(0x11d). Any valid field is allowed. Note neither this class nor Field check to ensure a valid field
         :param alpha: The code locators. The size of this array determines what n is. These values are entirely
@@ -36,6 +37,8 @@ class GeneralizedReedSolomon(object):
         else:
             raise Exception("Please provide a valid Field")
 
+        self.p = PolynomialOperations(self.f)
+
         # Next we want to work on our alpha array
         self.alpha_arr = []
         if alpha and isinstance(alpha, list):
@@ -54,7 +57,8 @@ class GeneralizedReedSolomon(object):
                     raise Exception("Failed to create alpha array. Try conventional_creation=True")
         else:
             raise Exception("Either the parameter alpha_arr or n must be included")
-        print(self.alpha_arr)
+        if print_matrices:
+            print(self.alpha_arr)
         # Set basic parameters for the code based on other inputs
         self.n = len(self.alpha_arr)
         self.k = k
@@ -94,10 +98,9 @@ class GeneralizedReedSolomon(object):
             raise Exception(f"Input message must be of size k, k={self.k}")
 
         if use_poly:
-            msg_poly = Polynomial(*msg, f=self.f)
             encoded_msg = []
             for i in range(0, self.n):
-                encoded_msg.append(self.f.multiply(self.vp_arr[i], msg_poly(self.alpha_arr[i])))
+                encoded_msg.append(self.f.multiply(self.vp_arr[i], self.p.poly_call(msg, self.alpha_arr[i])))
             return encoded_msg
         else:
             # m*G where m is our msg
@@ -105,7 +108,7 @@ class GeneralizedReedSolomon(object):
             for i in range(self.k):
                 msg_matrix.set(0, i, msg[i])
 
-            return msg_matrix * self.generator_matrix
+            return (msg_matrix * self.generator_matrix).to_list(single=True)
 
     def decode(self, msg):
         """
@@ -122,11 +125,12 @@ class GeneralizedReedSolomon(object):
         :return: returns decoded and error corrected message of size k
         """
         # First find syndrome (S_0, ... , S_d-2)
-        msg_syndrome = self.syndrome(msg)
+        msg_synd = self.syndrome(msg)
         msg_matrix = fieldmath.create_matrix([msg], self.f)  # creates msg row vector
 
         # we want to build the system of equations as presented on page 48 of the lecture notes
-        if msg_syndrome.any():
+        if any([syn != self.f.zero() for syn in msg_synd]):
+            msg_syndrome = fieldmath.create_matrix([msg_synd], self.f)
             tau = (self.d - 1) // 2
             syndrome_matrix = fieldmath.Matrix(self.d - 1, tau + 1, self.f, zeros=True)
             for i in range(self.d - 1):
@@ -141,24 +145,27 @@ class GeneralizedReedSolomon(object):
                 lam_coeff_matrix = lam_kernel_space * fieldmath.create_matrix([[1]] * lam_kernel_space.column_count(),
                                                                               self.f)
                 lam_coeff = lam_coeff_matrix.to_list(single=True)
-                lambda_poly = Polynomial(*lam_coeff, f=self.f)
+                # lambda_poly = Polynomial(*lam_coeff, f=self.f)
 
                 # plug lambda back into key equations to find gamma_poly
                 gamma_coeff_matrix = syndrome_matrix.get_sub_matrix(None, tau, None, None)*lam_coeff_matrix
-                gamma_poly = Polynomial(*gamma_coeff_matrix.to_list(single=True), f=self.f)
+                gamma_coeff = gamma_coeff_matrix.to_list(single=True)
+                # gamma_poly = Polynomial(*gamma_coeff, f=self.f)
 
                 # Calculate the GCD
-                gcd_lg = poly_gcd(lambda_poly, gamma_poly)
+                gcd_lg = self.p.poly_gcd(lam_coeff, gamma_coeff)
+                # gcd_lg = poly_gcd(lambda_poly, gamma_poly)
 
                 # divide to find error_locator_poly
-                error_locator_poly, rem = divmod(lambda_poly, gcd_lg)
+                # error_locator_poly, rem = divmod(lambda_poly, gcd_lg)
+                error_locator_poly, rem = self.p.poly_divmod(lam_coeff, gcd_lg)
 
                 # Find where the errors are by finding when Lambda(alpha_arr_k^-1) == 0
                 # Where Lambda is our error_locator_poly.
                 error_locations = []
                 for j in range(len(self.alpha_arr)):
                     alpha_inv = self.f.reciprocal(self.alpha_arr[j])
-                    if error_locator_poly(alpha_inv) == 0:
+                    if self.p.poly_call(error_locator_poly, alpha_inv) == 0:
                         error_locations.append(j)
 
                 if len(error_locations) != 0:
@@ -175,7 +182,8 @@ class GeneralizedReedSolomon(object):
                     # This next line has resulted in an error once in multiple thousands of test and I haven't figured
                     # why. And I have not be able to reproduce it.
                     try:
-                        errors = fieldmath.solve_ax_b(err_matrix, msg_syndrome.transpose())
+                        # errors = fieldmath.solve_ax_b(err_matrix, msg_syndrome.transpose())
+                        errors = fieldmath.solve_ax_b_fast(err_matrix, msg_syndrome.transpose())
                     except Exception as e:
                         print(f"Could not solve and find errors using solve_ax_b: {e}")
                         errors = fieldmath.create_matrix([[0]]*err_matrix.column_count(), self.f)
@@ -189,7 +197,7 @@ class GeneralizedReedSolomon(object):
         # We need to solve for what msg provided us with the output. If the number of errors is greater than the number
         # of fixable errors we wont have a valid message therefore trying to solve this will result in error.
         if not self.syndrome(msg_matrix).any():
-            return fieldmath.solve_ax_b(self.generator_matrix.transpose(), msg_matrix.transpose()).to_list(single=True)
+            return fieldmath.solve_ax_b_fast(self.generator_matrix.transpose(), msg_matrix.transpose()).to_list(single=True)
         else:
             # If we cant correct error the entire message is unusable so you can return all zeros as placeholder
             return [0]*self.k
@@ -198,24 +206,24 @@ class GeneralizedReedSolomon(object):
         """
         Computes the syndrome of a code. This is used in the decode function.
         :param msg:
-        :return: S_H(msg) = (S_0, ... , S_{d-2})
+        :return: S_H(msg) = (S_0, ... , S_{d-2}) in the same type as input msg
         """
         if isinstance(msg, list):
-            if len(msg) != self.n:
-                raise Exception("Input message must be of size n.")
-            msg_matrix = fieldmath.Matrix(1, self.n, self.f)
-            for i in range(self.n):
-                msg_matrix.set(0, i, msg[i])
+            syndrome = []
+            for l in range(self.d-1):
+                syn_l = self.f.zero()
+                for j in range(self.n):
+                    syn_l = self.f.add(syn_l, self.f.multiply(self.f.multiply(msg[j], self.v_arr[j]),
+                                                              fieldmath.pow_over_field(self.alpha_arr[j], l, self.f)))
+                syndrome.append(syn_l)
+            return syndrome
         elif isinstance(msg, fieldmath.Matrix):
             if msg.column_count() != self.n:
                 raise Exception("Input message must be of size n.")
-            msg_matrix = msg.copy()
+            # y*H^T where y is our msg
+            return msg * self.parity_check_matrix.transpose()
         else:
             raise TypeError()
-
-        # y*H^T where y is our msg
-        syndrome = msg_matrix * self.parity_check_matrix.transpose()
-        return syndrome
 
     def create_matrices(self):
         """
@@ -286,8 +294,8 @@ if __name__ == '__main__':
 
     # By changing out the following lines with another we can see how 1 vs 2 vs 3 errors affects the result
     # Remember for this case we can correct a max of 2 errors
-    error = [107, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  # One Error
-    # error = [0, 4, 0, 250, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  # Two Errors
+    # error = [107, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  # One Error
+    error = [0, 4, 0, 250, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  # Two Errors
     # error = [0, 3, 0, 0, 0, 2, 0, 0, 0, 5, 0, 0, 0, 0, 0]  # Three Errors
 
     msg_w_error = []

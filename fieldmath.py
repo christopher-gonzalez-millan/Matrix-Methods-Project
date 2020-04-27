@@ -169,6 +169,23 @@ class BinaryField(Field):
         # The size of the field is equal to 2 to the power of the degree of the modulus.
         self.size = 1 << (mod.bit_length() - 1)
 
+        self.mults = [[None] * self.size for _ in range(self.size)]
+        self.recips = [None] * self.size
+        self.pows = [[None] * self.size for _ in range(self.size)]
+        self.init_tables()
+
+    def init_tables(self):
+        for i in range(0, self.size):
+            for j in range(0, self.size):
+                self.mults[i][j] = self.multiply(i, j)
+
+        for i in range(1, self.size):
+            self.recips[i] = self.reciprocal(i)
+
+        for i in range(self.size):
+            for j in range(self.size):
+                self.pows[i][j] = pow_over_field(i, j, self)
+
     def zero(self):
         return 0
 
@@ -190,6 +207,8 @@ class BinaryField(Field):
     def multiply(self, x, y):
         self._check(x)
         self._check(y)
+        if self.mults[x][y] is not None:
+            return self.mults[x][y]
         result = 0
         while y != 0:
             if y & 1 != 0:
@@ -204,6 +223,9 @@ class BinaryField(Field):
         # Extended Euclidean GCD algorithm
         x = self.modulus
         y = self._check(w)
+        if self.recips[w] is not None:
+            return self.recips[w]
+
         if y == 0:
             raise ValueError("Division by zero")
         a = 0
@@ -252,6 +274,10 @@ def pow_over_field(base, exp, field):
         raise ValueError("Exp can not be negative.")
     if not isinstance(field, Field):
         raise Exception("Must provide a valid Field.")
+    if isinstance(field, BinaryField) and field.pows[base][exp] is not None:
+        return field.pows[base][exp]
+    if isinstance(field, BinaryField) and field.pows[base][exp-1] is not None:
+        return field.multiply(base, field.pows[base][exp-1])
 
     res = field.one()
     for _ in range(exp):
@@ -406,6 +432,28 @@ class Matrix:
                                 for (srcval, destval) in zip(self.values[srcrow], self.values[destrow])]
 
     # -- Advanced matrix operations --
+    def row_echelon_form(self):
+        rows = self.row_count()
+        cols = self.column_count()
+
+        # Compute row echelon form (REF)
+        numpivots = 0
+        for j in range(cols):  # For each column
+            if numpivots >= rows:
+                break
+            pivotrow = numpivots
+            while pivotrow < rows and self.f.equals(self.get(pivotrow, j), self.f.zero()):
+                pivotrow += 1
+            if pivotrow == rows:
+                continue  # Cannot eliminate on this column
+            self.swap_rows(numpivots, pivotrow)
+            pivotrow = numpivots
+            numpivots += 1
+
+            # Simplify the pivot row
+            # Eliminate rows below
+            for i in range(pivotrow + 1, rows):
+                self.add_rows(pivotrow, i, self.f.negate(self.f.multiply(self.f.reciprocal(self.get(pivotrow, j)), self.get(i, j))))
 
     def reduced_row_echelon_form(self, only_n_pivots=None):
         """Converts this matrix to reduced row echelon form (RREF) using Gauss-Jordan elimination.
@@ -548,8 +596,6 @@ def solve_ax_b(a, b):
 
     if not isinstance(a, Matrix) or not isinstance(b, Matrix):
         raise TypeError
-    """if a.row_count() != a.column_count():
-        raise Exception("Matrix A must be nxn. Try using solve_lstsq.")"""
     if b.column_count() != 1 or b.row_count() != a.row_count():
         raise Exception("Matrix b must be nx1.")
 
@@ -560,6 +606,7 @@ def solve_ax_b(a, b):
     c = 0
     result = Matrix(a.column_count(), 1, a.f, zeros=True)
     for r in range(axb.row_count()):
+        c = 0
         while c < axb.column_count():
             if axb.f.equals(axb.get(r, c), axb.f.zero()):
                 c += 1
@@ -569,6 +616,38 @@ def solve_ax_b(a, b):
                 break
         if c < axb.column_count() - 1:
             result.set(c, 0, axb.get(r, axb.column_count() - 1))
+    return result
+
+
+def solve_ax_b_fast(a, b):
+    """
+    Creates an augmented matrix and find the RREF. After that parses solution. Note this does not check for singular
+    matrices and tries to provide a particular solution, may have unexpected behavior.
+    """
+
+    if not isinstance(a, Matrix) or not isinstance(b, Matrix):
+        raise TypeError
+    if b.column_count() != 1 or b.row_count() != a.row_count():
+        raise Exception("Matrix b must be nx1.")
+
+    axb = augmented_a_b_matrix(a, b)
+    axb.row_echelon_form()
+
+    # now we got to find the solution
+    c = 0
+    result = Matrix(a.column_count(), 1, a.f, zeros=True)
+    if axb.row_count() < axb.column_count() - 1:
+        raise Exception("Can not solve, too few rows")
+    for r in range(axb.row_count()-1, -1, -1):
+        c = (min(axb.column_count() - 2, r))
+        if c != r:
+            if axb.get(r, c) != 0 or axb.get(r, c + 1) != 0:
+                raise Exception("Inconsistent linear system, or singular matrix A")
+        else:
+            to_sub = axb.f.zero()
+            for c2 in range(c + 1, axb.column_count() - 1):
+                to_sub = axb.f.add(to_sub, axb.f.multiply(axb.get(r, c2), result.get(c2, 0)))
+            result.set(c, 0, axb.f.multiply(axb.f.reciprocal(axb.get(r, c)), axb.f.subtract(axb.get(r, axb.column_count() - 1), to_sub)))
     return result
 
 
@@ -586,3 +665,15 @@ def solve_lstsq(a, b):
 
     x = solve_ax_b(ata, atb)
     return x
+
+
+if __name__ == '__main__':
+    field = BinaryField(0x11d)
+    a = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    b = [[5], [2], [8]]
+
+    print(solve_ax_b(create_matrix(a, field), create_matrix(b, field)))
+    print(solve_ax_b_fast(create_matrix(a, field), create_matrix(b, field)))
+
+    bf = BinaryField(2)
+    print(bf.size)
