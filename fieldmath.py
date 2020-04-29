@@ -8,8 +8,10 @@
 # Modified by Ian Jorquera
 # I have personally added to following function to the Field class:
 #       __eq__ and __ne__
-# and the following to the Matrix class:
-#       get_sub_matrix, to_list, copy, __mul__, transpose, any, and kernel_space
+# I have modified Multiply, Reciprocal and __init__ of BinaryField to pre-generate all values
+# I have added the following to the Matrix class:
+#       get_sub_matrix, to_list, copy, __mul__, transpose, row_echelon_form(Most copied from the RREF function),
+#       any, and kernel_space
 # I have also added these addition function:
 #       pow_over_field, identity_n, create_matrix, augmented_a_b_matrix, solve_ax_b and solve_lstsq
 # Slight modification may have also been made to other existing functions not listed above
@@ -84,68 +86,6 @@ class Field:
 
     def __ne__(self, other):
         return not self.__eq__(other)
-
-
-# ---- PrimeField class ----
-class PrimeField(Field):
-    """A finite field of the form Z_p, where p is a prime number.
-    Each element of this kind of field is an integer in the range [0, p).
-    Both the field and the elements are immutable and thread-safe."""
-
-    def __init__(self, mod):
-        """Constructs a prime field with the given modulus. The modulus must be a
-        prime number, but this crucial property is not checked by the constructor."""
-        if mod < 2:
-            raise ValueError("Modulus must be prime")
-        # The modulus of this field, which is also the number of elements in this finite field. Must be prime.
-        self.modulus = mod
-
-    def zero(self):
-        return 0
-
-    def one(self):
-        return 1
-
-    def equals(self, x, y):
-        return self._check(x) == self._check(y)
-
-    def negate(self, x):
-        return -self._check(x) % self.modulus
-
-    def add(self, x, y):
-        return (self._check(x) + self._check(y)) % self.modulus
-
-    def subtract(self, x, y):
-        return (self._check(x) - self._check(y)) % self.modulus
-
-    def multiply(self, x, y):
-        return (self._check(x) * self._check(y)) % self.modulus
-
-    def reciprocal(self, w):
-        # Extended Euclidean GCD algorithm
-        x = self.modulus
-        y = self._check(w)
-        if y == 0:
-            raise ValueError("Division by zero")
-        a = 0
-        b = 1
-        while y != 0:
-            q, r = x // y, x % y
-            x, y = y, r
-            a, b = b, (a - q * b)
-        if x == 1:
-            return a % self.modulus
-        else:  # All non-zero values must have a reciprocal
-            raise AssertionError("Field modulus is not prime")
-
-    # Checks if the given object is the correct type and within
-    # the range of valid values, and returns the value itself.
-    def _check(self, x):
-        if not isinstance(x, int):
-            raise TypeError()
-        if not (0 <= x < self.modulus):
-            raise ValueError("Not an element of this field: " + str(x))
-        return x
 
 
 # ---- BinaryField class ----
@@ -600,37 +540,6 @@ def solve_ax_b(a, b):
         raise Exception("Matrix b must be nx1.")
 
     axb = augmented_a_b_matrix(a, b)
-    axb.reduced_row_echelon_form()
-
-    # now we got to find the solution
-    c = 0
-    result = Matrix(a.column_count(), 1, a.f, zeros=True)
-    for r in range(axb.row_count()):
-        c = 0
-        while c < axb.column_count():
-            if axb.f.equals(axb.get(r, c), axb.f.zero()):
-                c += 1
-            elif c == axb.column_count() - 1:
-                raise Exception("Inconsistent linear system, or singular matrix A")
-            else:
-                break
-        if c < axb.column_count() - 1:
-            result.set(c, 0, axb.get(r, axb.column_count() - 1))
-    return result
-
-
-def solve_ax_b_fast(a, b):
-    """
-    Creates an augmented matrix and find the RREF. After that parses solution. Note this does not check for singular
-    matrices and tries to provide a particular solution, may have unexpected behavior.
-    """
-
-    if not isinstance(a, Matrix) or not isinstance(b, Matrix):
-        raise TypeError
-    if b.column_count() != 1 or b.row_count() != a.row_count():
-        raise Exception("Matrix b must be nx1.")
-
-    axb = augmented_a_b_matrix(a, b)
     axb.row_echelon_form()
 
     # now we got to find the solution
@@ -668,6 +577,7 @@ def solve_lstsq(a, b):
 
 
 if __name__ == '__main__':
+    # This is an example of how to use the matrix class
     bf = BinaryField(2)
     a = [[1, 0, 0], [1, 1, 0], [1, 1, 1]]
     a_matrix = create_matrix(a, bf)

@@ -57,15 +57,17 @@ class GeneralizedReedSolomon(object):
                     raise Exception("Failed to create alpha array. Try conventional_creation=True")
         else:
             raise Exception("Either the parameter alpha_arr or n must be included")
+
         if print_matrices:
             print(self.alpha_arr)
+
         # Set basic parameters for the code based on other inputs
         self.n = len(self.alpha_arr)
         self.k = k
         self.d = self.n - self.k + 1
 
         # save column multipliers for the parity check matrix
-        if isinstance(v_arr, int):  # TODO: change from type int to anything really
+        if isinstance(v_arr, int):
             self.v_arr = [self.f.multiply(v_arr, self.f.one())]*self.n
         elif isinstance(v_arr, list):
             self.v_arr = v_arr  # Assumes user knows what they're doing
@@ -103,7 +105,7 @@ class GeneralizedReedSolomon(object):
                 encoded_msg.append(self.f.multiply(self.vp_arr[i], self.p.poly_call(msg, self.alpha_arr[i])))
             return encoded_msg
         else:
-            # m*G where m is our msg
+            # E(m) = m*G where m is our msg
             msg_matrix = fieldmath.Matrix(1, self.k, self.f)
             for i in range(self.k):
                 msg_matrix.set(0, i, msg[i])

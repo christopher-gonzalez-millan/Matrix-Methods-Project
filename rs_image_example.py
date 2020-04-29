@@ -44,10 +44,22 @@ if __name__ == '__main__':
     # Create a random scratch in the form ax + b
     a = random.randint(-1*3, 3)
     b = random.randint(0, y_max)
-    a = -1
-    b = 500
 
-    # Something is weird with this fix that
+    # Simulate bit error
+    # This purely acts as a test file therefore i will comment out this chunk of code.
+    # TO use this option over the scratch option comment the scratch segment out and uncomment this.
+    """p_bit_error = float(1/100)
+    p_byte_error = float(1 - pow(1 - p_bit_error, 8))
+    for i in range(0, len(encoded_msg)):
+        x, y = divmod(i, ey_max)  # x - row, y - column
+        y = int(k * (y / n) / 3)
+        if random.random() < p_byte_error:
+            img_scratch[x, y] = np.array([255, 255, 255])
+            scratch[x, y] = np.array([255, 255, 255])
+            encoded_msg[i] = 0
+    # End of Simulate bit error"""
+
+    # Simulate scratch
     for i in range(0, len(encoded_msg), 3):
         x, y = divmod(i, ey_max)  # x - row, y - column
         y = int(k*(y/n)/3)
@@ -64,6 +76,7 @@ if __name__ == '__main__':
             encoded_msg[i] = 0
             encoded_msg[i + 1] = 0
             encoded_msg[i + 2] = 0
+    # end of Simulate scratch
 
     Image.fromarray(img_scratch).save('img_scratch.png')
     Image.fromarray(scratch).save('scratch.png')
