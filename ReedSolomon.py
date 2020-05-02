@@ -185,7 +185,7 @@ class GeneralizedReedSolomon(object):
                     # why. And I have not be able to reproduce it.
                     try:
                         # errors = fieldmath.solve_ax_b(err_matrix, msg_syndrome.transpose())
-                        errors = fieldmath.solve_ax_b_fast(err_matrix, msg_syndrome.transpose())
+                        errors = fieldmath.solve_ax_b(err_matrix, msg_syndrome.transpose())
                     except Exception as e:
                         print(f"Could not solve and find errors using solve_ax_b: {e}")
                         errors = fieldmath.create_matrix([[0]]*err_matrix.column_count(), self.f)
@@ -199,7 +199,7 @@ class GeneralizedReedSolomon(object):
         # We need to solve for what msg provided us with the output. If the number of errors is greater than the number
         # of fixable errors we wont have a valid message therefore trying to solve this will result in error.
         if not self.syndrome(msg_matrix).any():
-            return fieldmath.solve_ax_b_fast(self.generator_matrix.transpose(), msg_matrix.transpose()).to_list(single=True)
+            return fieldmath.solve_ax_b(self.generator_matrix.transpose(), msg_matrix.transpose()).to_list(single=True)
         else:
             # If we cant correct error the entire message is unusable so you can return all zeros as placeholder
             return [0]*self.k
